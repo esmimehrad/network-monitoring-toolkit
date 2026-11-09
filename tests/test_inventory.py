@@ -265,3 +265,7 @@ def test_all_problems_are_reported_together():
     assert len(errors) == 3
     assert any(error.startswith("devices[0] (router-a)") for error in errors)
     assert any(error.startswith("devices[1] (router-b)") for error in errors)
+
+
+def test_description_must_be_text():
+    valid_entry(description="A valid description")
