@@ -11,7 +11,7 @@ devices:
     environment: development
     criticality: medium
     ports: [8080]
-    description: Local test web server - start one with "python -m http.server 8080"
+    description: Local test web server - start one with "python -m http.server 8080 --bind 127.0.0.1"
 
   - name: local-ssh
     host: localhost
