@@ -125,8 +125,9 @@ def test_refused_result_keeps_error_message():
         check_type=CheckType.TCP,
         status=CheckStatus.REFUSED,
         port=22,
-        error="Connection refused by remote host",
+        error="Connection refused",
     )
 
+    assert not result.is_success
     assert result.error == "Connection refused"
     assert result.to_dict()["error"] == "Connection refused"
