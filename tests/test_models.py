@@ -116,3 +116,17 @@ def test_to_dict_returns_plain_json_serializable_values():
     assert data["response_time_ms"] is None
     assert data["timestamp"].endswith("+00:00")
     json.dumps(data)
+
+
+def test_refused_result_keeps_error_message():
+    result = CheckResult(
+        device_name="lab-switch-01",
+        host="10.0.0.2",
+        check_type=CheckType.TCP,
+        status=CheckStatus.REFUSED,
+        port=22,
+        error="Connection refused by remote host",
+    )
+
+    assert result.error == "Connection refused"
+    assert result.to_dict()["error"] == "Connection refused"
