@@ -43,6 +43,7 @@ def test_successful_connection_to_local_server(listening_port):
         (ConnectionRefusedError(), CheckStatus.REFUSED, "Connection refused"),
         (socket.gaierror(socket.EAI_NONAME, "Name unknown"), CheckStatus.DNS_FAILURE, "DNS"),
         (OSError(101, "Network is unreachable"), CheckStatus.UNREACHABLE, "unreachable"),
+        (ConnectionResetError(), CheckStatus.UNREACHABLE, "Network error"),
     ],
 )
 def test_network_errors_map_to_the_right_status(
