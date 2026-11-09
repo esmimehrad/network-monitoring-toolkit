@@ -268,4 +268,6 @@ def test_all_problems_are_reported_together():
 
 
 def test_description_must_be_text():
-    valid_entry(description="A valid description")
+    errors = errors_for(valid_entry(description=12345))
+
+    assert any("description must be text" in error for error in errors)
