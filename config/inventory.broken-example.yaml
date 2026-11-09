@@ -1,0 +1,23 @@
+# Deliberately broken inventory used to demonstrate validation errors.
+# Run: python main.py config/inventory.broken-example.yaml
+
+devices:
+  - name: core-router-01
+    host: 192.168.1.300
+    type: router
+    environment: prodution
+    criticality: high
+    ports: [22, 443, 70000]
+
+  - name: core-router-01
+    host: web_server.local
+    type: server
+    environment: development
+    critcality: medium
+    ports: [80, "443", 80]
+
+  - name: yes
+    host: 10.0.0.5
+    type: switch
+    environment: staging
+    criticality: low

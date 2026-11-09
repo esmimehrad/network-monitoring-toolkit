@@ -1,0 +1,38 @@
+# Network inventory for the Network Monitoring Toolkit.
+#
+# Only list devices and services you own or are explicitly authorised to monitor.
+# The default entries below are safe test targets: your own computer, a reserved
+# documentation IP address and a reserved domain name that can never resolve.
+
+devices:
+  - name: local-web-server
+    host: 127.0.0.1
+    type: server
+    environment: development
+    criticality: medium
+    ports: [8080]
+    description: Local test web server - start one with "python -m http.server 8080"
+
+  - name: local-ssh
+    host: localhost
+    type: server
+    environment: development
+    criticality: low
+    ports: [22]
+    description: SSH on this computer - usually refused on Windows, which is a useful test
+
+  - name: doc-router-01
+    host: 192.0.2.1
+    type: router
+    environment: production
+    criticality: high
+    ports: [22, 443]
+    description: RFC 5737 documentation address - never answers, demonstrates timeouts
+
+  - name: dns-failure-demo
+    host: monitor-demo.invalid
+    type: server
+    environment: staging
+    criticality: low
+    ports: [443]
+    description: Reserved .invalid domain (RFC 6761) - always fails DNS resolution
