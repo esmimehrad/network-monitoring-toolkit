@@ -22,6 +22,7 @@ def main() -> int:
 
     print(f"Network Monitoring Toolkit v{__version__}")
     print(f"Python {running} - environment OK")
+    print(f"Interpreter: {sys.executable}")
     return 0
 
 
