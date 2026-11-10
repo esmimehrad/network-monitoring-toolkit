@@ -1,7 +1,8 @@
 """Entry point for the Network Monitoring Toolkit.
 
-Phase 4: checks the Python environment, validates the device inventory, then
-runs DNS and TCP checks against every device. Usage:
+Phase 5: checks the Python environment, validates the device inventory, runs
+DNS, ICMP (ping) and TCP checks against every device, then reports which
+devices are reachable. Usage:
 
     python main.py                         # uses config/inventory.yaml
     python main.py path/to/inventory.yaml  # uses another inventory file
@@ -19,7 +20,8 @@ import sys
 from pathlib import Path
 
 from network_monitor import __version__
-from network_monitor.connectivity import check_device
+from network_monitor.connectivity import check_device, is_device_reachable
+from network_monitor.icmp_monitor import DEFAULT_PING_TIMEOUT_SECONDS
 from network_monitor.inventory import InventoryError, load_inventory
 from network_monitor.models import CheckResult, CheckStatus
 from network_monitor.tcp_monitor import DEFAULT_TIMEOUT_SECONDS
@@ -78,13 +80,26 @@ def main() -> int:
 
     print(f"Inventory OK: {len(devices)} device(s) loaded from {inventory_path}")
     print()
-    print(f"Running DNS and TCP checks (TCP timeout {DEFAULT_TIMEOUT_SECONDS:g} s)...")
+    print(
+        f"Running DNS, ICMP and TCP checks (ping timeout {DEFAULT_PING_TIMEOUT_SECONDS:g} s, "
+        f"TCP timeout {DEFAULT_TIMEOUT_SECONDS:g} s)..."
+    )
 
     results: list[CheckResult] = []
+    reachable_devices = 0
+    device_lines: list[str] = []
+
     for device in devices:
-        for result in check_device(device):
+        device_results = check_device(device)
+        for result in device_results:
             print(format_result(result))
-            results.append(result)
+        results.extend(device_results)
+
+        if is_device_reachable(device_results):
+            reachable_devices += 1
+            device_lines.append(f"  {device.name:<20} UP")
+        else:
+            device_lines.append(f"  {device.name:<20} DOWN")
 
     succeeded = sum(1 for result in results if result.is_success)
     skipped = sum(1 for result in results if result.status == CheckStatus.SKIPPED)
@@ -92,6 +107,12 @@ def main() -> int:
     failed = total - succeeded - skipped
 
     print()
+    print("Device reachability (any ICMP reply or TCP answer counts as reachable):")
+    for line in device_lines:
+        print(line)
+
+    print()
+    print(f"Devices: {reachable_devices}/{len(devices)} reachable")
     print(f"Checks: {total} total, {succeeded} succeeded, {failed} failed, {skipped} skipped")
 
     return EXIT_CHECKS_FAILED if failed else EXIT_OK

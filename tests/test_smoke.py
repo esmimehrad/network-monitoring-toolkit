@@ -55,7 +55,8 @@ def test_main_exits_0_when_all_checks_succeed(tmp_path, listening_port):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "environment OK" in result.stdout
     assert "Inventory OK" in result.stdout
-    assert "1 succeeded, 0 failed" in result.stdout
+    assert "0 failed" in result.stdout
+    assert "Devices: 1/1 reachable" in result.stdout
 
 
 def test_main_exits_2_when_a_check_fails(tmp_path, closed_port):
