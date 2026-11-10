@@ -104,6 +104,7 @@ def test_parse_round_trip_ms(output, expected):
         (0, WINDOWS_UNREACHABLE, CheckStatus.UNREACHABLE),
         (1, WINDOWS_UNKNOWN_HOST, CheckStatus.DNS_FAILURE),
         (2, LINUX_NOT_PERMITTED, CheckStatus.SKIPPED),
+        (1, "From 192.168.1.1 icmp_seq=1 Destination Host Unreachable", CheckStatus.UNREACHABLE),
     ],
 )
 def test_ping_output_maps_to_the_right_status(monkeypatch, returncode, stdout, expected_status):
