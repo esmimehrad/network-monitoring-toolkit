@@ -1,8 +1,8 @@
 """Entry point for the Network Monitoring Toolkit.
 
-Phase 5: checks the Python environment, validates the device inventory, runs
-DNS, ICMP (ping) and TCP checks against every device, then reports which
-devices are reachable. Usage:
+Phase 6: checks the Python environment, validates the device inventory, then
+runs DNS, ICMP (ping) and TCP checks on many devices at the same time and
+reports which devices are reachable. Usage:
 
     python main.py                         # uses config/inventory.yaml
     python main.py path/to/inventory.yaml  # uses another inventory file
@@ -20,14 +20,15 @@ import sys
 from pathlib import Path
 
 from network_monitor import __version__
-from network_monitor.connectivity import check_device, is_device_reachable
 from network_monitor.icmp_monitor import DEFAULT_PING_TIMEOUT_SECONDS
 from network_monitor.inventory import InventoryError, load_inventory
-from network_monitor.models import CheckResult, CheckStatus
+from network_monitor.models import CheckResult, CheckStatus, DeviceReport
+from network_monitor.scheduler import DEFAULT_MAX_WORKERS, run_checks
 from network_monitor.tcp_monitor import DEFAULT_TIMEOUT_SECONDS
 
 MIN_PYTHON = (3, 12)
 DEFAULT_INVENTORY = Path(__file__).resolve().parent / "config" / "inventory.yaml"
+MAX_WORKERS = DEFAULT_MAX_WORKERS
 
 EXIT_OK = 0
 EXIT_INVALID_INVENTORY = 1
@@ -54,8 +55,17 @@ def format_result(result: CheckResult) -> str:
     return line.rstrip()
 
 
+def print_device_report(report: DeviceReport) -> None:
+    """Print one device's results as soon as that device has finished."""
+    if report.error is not None:
+        print(f"  [ERR ] {report.device.name:<20} checks crashed: {report.error}")
+        return
+    for result in report.results:
+        print(format_result(result))
+
+
 def main() -> int:
-    """Validate the inventory, run all checks and return an exit code."""
+    """Validate the inventory, run all checks concurrently and return an exit code."""
     running = sys.version.split()[0]
 
     if sys.version_info < MIN_PYTHON:
@@ -81,41 +91,34 @@ def main() -> int:
     print(f"Inventory OK: {len(devices)} device(s) loaded from {inventory_path}")
     print()
     print(
-        f"Running DNS, ICMP and TCP checks (ping timeout {DEFAULT_PING_TIMEOUT_SECONDS:g} s, "
+        f"Checking {len(devices)} device(s) with up to {MAX_WORKERS} worker thread(s) "
+        f"(ping timeout {DEFAULT_PING_TIMEOUT_SECONDS:g} s, "
         f"TCP timeout {DEFAULT_TIMEOUT_SECONDS:g} s)..."
     )
+    print("Results appear as each device finishes:")
 
-    results: list[CheckResult] = []
-    reachable_devices = 0
-    device_lines: list[str] = []
-
-    for device in devices:
-        device_results = check_device(device)
-        for result in device_results:
-            print(format_result(result))
-        results.extend(device_results)
-
-        if is_device_reachable(device_results):
-            reachable_devices += 1
-            device_lines.append(f"  {device.name:<20} UP")
-        else:
-            device_lines.append(f"  {device.name:<20} DOWN")
-
-    succeeded = sum(1 for result in results if result.is_success)
-    skipped = sum(1 for result in results if result.status == CheckStatus.SKIPPED)
-    total = len(results)
-    failed = total - succeeded - skipped
+    run = run_checks(devices, max_workers=MAX_WORKERS, on_device_done=print_device_report)
 
     print()
     print("Device reachability (any ICMP reply or TCP answer counts as reachable):")
-    for line in device_lines:
-        print(line)
+    for report in run.reports:
+        if report.error is not None:
+            state = "ERROR"
+        elif report.reachable:
+            state = "UP"
+        else:
+            state = "DOWN"
+        print(f"  {report.device.name:<20} {state}")
 
     print()
-    print(f"Devices: {reachable_devices}/{len(devices)} reachable")
-    print(f"Checks: {total} total, {succeeded} succeeded, {failed} failed, {skipped} skipped")
+    print(f"Devices: {run.reachable_devices}/{len(run.reports)} reachable")
+    print(
+        f"Checks: {run.total_checks} total, {run.succeeded_checks} succeeded, "
+        f"{run.failed_checks} failed, {run.skipped_checks} skipped"
+    )
+    print(f"Completed in {run.duration_seconds:.2f} s using {run.workers} worker thread(s)")
 
-    return EXIT_CHECKS_FAILED if failed else EXIT_OK
+    return EXIT_CHECKS_FAILED if run.has_failures else EXIT_OK
 
 
 if __name__ == "__main__":

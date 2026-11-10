@@ -1,8 +1,9 @@
 """Core data models shared by every part of the toolkit.
 
-These classes describe *what* we monitor (Device) and *what we found*
-(CheckResult). They only hold data: validation lives in inventory.py,
-network logic lives in the monitor modules, and storage lives in database.py.
+These classes describe *what* we monitor (Device), *what we found*
+(CheckResult), and how a whole run went (DeviceReport, MonitoringRun). They
+only hold data: validation lives in inventory.py, network logic lives in the
+monitor modules, and storage lives in database.py.
 """
 
 from dataclasses import dataclass, field
@@ -102,3 +103,63 @@ class CheckResult:
             "detail": self.detail,
             "timestamp": self.timestamp.isoformat(),
         }
+
+
+@dataclass(frozen=True)
+class DeviceReport:
+    """Every check result for one device from one monitoring run."""
+
+    device: Device
+    results: tuple[CheckResult, ...]
+    reachable: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class MonitoringRun:
+    """The outcome of monitoring a whole inventory once."""
+
+    reports: tuple[DeviceReport, ...]
+    started_at: datetime
+    duration_seconds: float
+    workers: int
+
+    @property
+    def results(self) -> list[CheckResult]:
+        """Every check result from every device, in inventory order."""
+        return [result for report in self.reports for result in report.results]
+
+    @property
+    def total_checks(self) -> int:
+        """Number of checks that produced a result."""
+        return len(self.results)
+
+    @property
+    def succeeded_checks(self) -> int:
+        """Number of checks that succeeded."""
+        return sum(1 for result in self.results if result.is_success)
+
+    @property
+    def skipped_checks(self) -> int:
+        """Number of checks that were skipped (not counted as failures)."""
+        return sum(1 for result in self.results if result.status == CheckStatus.SKIPPED)
+
+    @property
+    def failed_checks(self) -> int:
+        """Number of checks that ran and failed."""
+        return self.total_checks - self.succeeded_checks - self.skipped_checks
+
+    @property
+    def reachable_devices(self) -> int:
+        """Number of devices that answered at least one ICMP or TCP check."""
+        return sum(1 for report in self.reports if report.reachable)
+
+    @property
+    def crashed_devices(self) -> int:
+        """Number of devices whose checks stopped with an unexpected error."""
+        return sum(1 for report in self.reports if report.error is not None)
+
+    @property
+    def has_failures(self) -> bool:
+        """True if any check failed or any device's checks crashed."""
+        return self.failed_checks > 0 or self.crashed_devices > 0
