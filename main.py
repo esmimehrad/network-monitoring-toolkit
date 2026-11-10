@@ -1,15 +1,16 @@
 """Entry point for the Network Monitoring Toolkit.
 
-Phase 7: checks the Python environment, validates the device inventory, runs
-DNS, ICMP (ping) and TCP checks on many devices at the same time, reports which
-devices are reachable, and saves every run to a SQLite history database.
-Usage:
+Phase 8: checks the Python environment, validates the device inventory, runs
+DNS, ICMP (ping) and TCP checks on many devices at the same time, prints a
+summary, saves the run to the SQLite history database, and writes JSON and CSV
+reports. Usage:
 
     python main.py                         # uses config/inventory.yaml
     python main.py path/to/inventory.yaml  # uses another inventory file
 
-The database is data/monitoring.db unless the NETWORK_MONITOR_DB environment
-variable points somewhere else.
+Locations can be changed with environment variables:
+    NETWORK_MONITOR_DB           database file  (default: data/monitoring.db)
+    NETWORK_MONITOR_REPORTS_DIR  reports folder (default: reports/)
 
 Exit codes:
     0  every check succeeded (or was skipped)
@@ -31,6 +32,12 @@ from network_monitor.database import MonitoringDatabase, RunRecord
 from network_monitor.icmp_monitor import DEFAULT_PING_TIMEOUT_SECONDS
 from network_monitor.inventory import InventoryError, load_inventory
 from network_monitor.models import CheckResult, CheckStatus, DeviceReport
+from network_monitor.reporting import (
+    format_summary,
+    summarize_run,
+    write_csv_report,
+    write_json_report,
+)
 from network_monitor.scheduler import DEFAULT_MAX_WORKERS, run_checks
 from network_monitor.tcp_monitor import DEFAULT_TIMEOUT_SECONDS
 
@@ -38,14 +45,16 @@ MIN_PYTHON = (3, 12)
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_INVENTORY = PROJECT_ROOT / "config" / "inventory.yaml"
 DEFAULT_DATABASE = PROJECT_ROOT / "data" / "monitoring.db"
+DEFAULT_REPORTS_DIR = PROJECT_ROOT / "reports"
 DATABASE_ENV_VAR = "NETWORK_MONITOR_DB"
+REPORTS_DIR_ENV_VAR = "NETWORK_MONITOR_REPORTS_DIR"
 MAX_WORKERS = DEFAULT_MAX_WORKERS
 RECENT_RUNS_TO_SHOW = 5
 
 EXIT_OK = 0
 EXIT_INVALID_INVENTORY = 1
 EXIT_CHECKS_FAILED = 2
-EXIT_DATABASE_ERROR = 3
+EXIT_SAVE_ERROR = 3
 
 
 def format_result(result: CheckResult) -> str:
@@ -87,13 +96,13 @@ def print_device_report(report: DeviceReport) -> None:
         print(format_result(result))
 
 
-def database_path() -> Path:
-    """Return the database location: NETWORK_MONITOR_DB if set, otherwise the default."""
-    return Path(os.environ.get(DATABASE_ENV_VAR, DEFAULT_DATABASE))
+def path_from_env(variable: str, default: Path) -> Path:
+    """Return the path in an environment variable if it is set, otherwise the default."""
+    return Path(os.environ.get(variable, default))
 
 
 def main() -> int:
-    """Validate the inventory, run all checks, save them, and return an exit code."""
+    """Validate the inventory, run all checks, save and report them, and return an exit code."""
     running = sys.version.split()[0]
 
     if sys.version_info < MIN_PYTHON:
@@ -128,25 +137,9 @@ def main() -> int:
     run = run_checks(devices, max_workers=MAX_WORKERS, on_device_done=print_device_report)
 
     print()
-    print("Device reachability (any ICMP reply or TCP answer counts as reachable):")
-    for report in run.reports:
-        if report.error is not None:
-            state = "ERROR"
-        elif report.reachable:
-            state = "UP"
-        else:
-            state = "DOWN"
-        print(f"  {report.device.name:<20} {state}")
+    print(format_summary(run, summarize_run(run)))
 
-    print()
-    print(f"Devices: {run.reachable_devices}/{len(run.reports)} reachable")
-    print(
-        f"Checks: {run.total_checks} total, {run.succeeded_checks} succeeded, "
-        f"{run.failed_checks} failed, {run.skipped_checks} skipped"
-    )
-    print(f"Completed in {run.duration_seconds:.2f} s using {run.workers} worker thread(s)")
-
-    db_path = database_path()
+    db_path = path_from_env(DATABASE_ENV_VAR, DEFAULT_DATABASE)
     try:
         with MonitoringDatabase(db_path) as database:
             run_id = database.save_run(run)
@@ -154,10 +147,22 @@ def main() -> int:
     except (sqlite3.Error, OSError) as exc:
         print()
         print(f"ERROR: could not save results to {db_path}: {exc}")
-        return EXIT_DATABASE_ERROR
+        return EXIT_SAVE_ERROR
+
+    reports_dir = path_from_env(REPORTS_DIR_ENV_VAR, DEFAULT_REPORTS_DIR)
+    try:
+        json_path = write_json_report(run, reports_dir)
+        csv_path = write_csv_report(run, reports_dir)
+    except OSError as exc:
+        print()
+        print(f"ERROR: could not write reports to {reports_dir}: {exc}")
+        return EXIT_SAVE_ERROR
 
     print()
     print(f"Saved as run #{run_id} in {db_path}")
+    print(f"JSON report: {json_path}")
+    print(f"CSV report:  {csv_path}")
+    print()
     print("Recent runs (newest first):")
     for record in recent_runs:
         print(format_run_record(record))

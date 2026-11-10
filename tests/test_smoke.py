@@ -1,7 +1,8 @@
 """Smoke tests: prove the package imports and the entry point runs end to end.
 
 These tests only touch 127.0.0.1 (this computer), never real external servers,
-and each test uses its own temporary database so your real history is untouched.
+and each test uses its own temporary database and reports folder, so your real
+history and reports are untouched.
 """
 
 import os
@@ -16,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def run_main(database: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run 'python main.py <args>' with a test database and capture its output."""
+    """Run 'python main.py <args>' with a test database and reports folder."""
     return subprocess.run(
         [sys.executable, "main.py", *args],
         cwd=PROJECT_ROOT,
@@ -24,7 +25,11 @@ def run_main(database: Path, *args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=60,
         check=False,
-        env={**os.environ, "NETWORK_MONITOR_DB": str(database)},
+        env={
+            **os.environ,
+            "NETWORK_MONITOR_DB": str(database),
+            "NETWORK_MONITOR_REPORTS_DIR": str(database.parent / "reports"),
+        },
     )
 
 
@@ -59,7 +64,7 @@ def test_main_exits_0_when_all_checks_succeed(tmp_path, listening_port):
     assert "environment OK" in result.stdout
     assert "Inventory OK" in result.stdout
     assert "0 failed" in result.stdout
-    assert "Devices: 1/1 reachable" in result.stdout
+    assert "1/1 (100.0% availability)" in result.stdout
     assert "Saved as run #1" in result.stdout
 
 
@@ -75,6 +80,16 @@ def test_each_run_is_added_to_the_history(tmp_path, listening_port):
     assert "#2 " in result.stdout
 
 
+def test_main_writes_json_and_csv_reports(tmp_path, listening_port):
+    inventory = write_local_inventory(tmp_path, listening_port)
+
+    run_main(tmp_path / "monitoring.db", str(inventory))
+
+    reports = tmp_path / "reports"
+    assert len(list(reports.glob("report-*.json"))) == 1
+    assert len(list(reports.glob("report-*.csv"))) == 1
+
+
 def test_main_exits_2_when_a_check_fails(tmp_path, closed_port):
     inventory = write_local_inventory(tmp_path, closed_port)
 
@@ -82,6 +97,7 @@ def test_main_exits_2_when_a_check_fails(tmp_path, closed_port):
 
     assert result.returncode == 2, result.stdout + result.stderr
     assert "refused" in result.stdout
+    assert "Failed ports:" in result.stdout
 
 
 def test_main_exits_1_for_invalid_inventory(tmp_path):
